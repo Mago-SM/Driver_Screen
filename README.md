@@ -1,33 +1,55 @@
 # 진주 버스 운전자 앱
 
-앱을 실행하면 바로 운전자 화면이 열립니다. 승객 앱과 패키지가 달라 함께 설치할 수 있습니다.
-디자인 프로토타입 18·19페이지의 현재/다음 정류장, 승하차 인원, 정차 안내를 구현했습니다.
+운행 방향, 노선번호, 차량을 선택하고 정류장별 승차 대기와 하차 요청 인원을 확인하는 Android 앱.
 
-## 확인 방법
+## 기능
 
-Android Studio에서 이 프로젝트 폴더를 Open하고 Gradle Sync 후 Run을 누르세요.
-`MainActivity.kt`의 `DriverScreenPreview`는 세로/가로 Preview를 제공합니다.
-첫 화면은 첨부 디자인처럼 대시보드가 바로 보입니다. 예약 인원 카드를 누르면 정차 안내가 열립니다.
-상단 150번 배지를 누르면 예시 데이터 안내와 정류장 이동 메뉴를 열 수 있습니다.
+- 로그인 없이 상행·하행, 노선번호, 차량 선택
+- 현재·다음 정류장 및 노선 표시
+- 정류장별 승차 대기·하차 요청·예정 하차 인원 조회
+- 화면이 켜져 있는 동안 5초마다 갱신
+- 운행 시작, 다음 정류장 이동, 운행 종료 수동 처리
 
-## 구조와 이유
+## 실행
 
-- Kotlin + Jetpack Compose + Material 3: 새 프로젝트의 기존 기술을 유지했습니다. XML UI 라이브러리를 추가하지 않았습니다.
-- `MainActivity.kt`: 화면 구성과 사용자 동작. 넓이 600dp 이상에서는 두 카드를 나란히 배치하고 작은 화면에서는 세로로 배치합니다.
-- `DriverTrip.kt`: 정류장/예약 데이터와 이동·확인 로직을 화면에서 분리합니다. 서버 데이터 연결 시 이 경계에서 교체할 수 있습니다.
-- `rememberSaveable`: 회전과 Activity 재생성 때 현재 정류장·확인 상태를 유지합니다.
-- 승차 파랑/하차 빨강과 큰 글자를 사용하며 상태는 글자로도 표시합니다.
-- 정차 안내 확인은 예약을 삭제하거나 승하차 완료로 처리하지 않습니다.
+Android Studio에서 저장소 폴더를 열고 Gradle Sync 후 `app`을 실행한다.
+Android 8.0 이상을 지원하며 compileSdk 36, targetSdk 35, Gradle 9.6.0, JDK 25를 사용한다.
 
-현재는 예시 데이터입니다. 로그인/운전자 권한, GPS, 예약 서버, 연결 끊김 처리는 아직 없습니다.
-150번 배지의 ‘예시 정류장 이동’은 예시 위치만 이동합니다. 종점에서는 이동이 비활성화됩니다.
+앱의 **서버 설정**에 백엔드 주소를 입력한다. 에뮬레이터에서 개발 PC의 서버에 연결할 때는 `http://10.0.2.2:3000`을 사용한다. 실기기의 로컬 HTTP 주소는 debug 네트워크 설정에 추가해야 하며 릴리스는 HTTPS를 사용한다.
 
-## 검증 명령
+진주시 API 키와 DB 접속 정보는 백엔드 `.env`에 설정한다. 앱에 키를 넣지 않는다.
 
-Windows: `gradlew.bat :app:assembleDebug :app:testDebugUnitTest :app:lintDebug`
+## 파일
 
-클라우드:
-`python3 /workspace/.onboarding/run-java.py bash gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --no-daemon`
+| 파일 | 역할 |
+|---|---|
+| `MainActivity.kt` | 노선·차량 선택, 화면 갱신, 운행 조작 |
+| `Api.kt` | 서버 요청 및 응답 처리 |
+| `Models.kt` | 정류장·예약 집계 데이터 |
+| `RouteTimeline.kt` | 정류장 연결선과 현재 위치 표시 |
+| `app/src/main/res` | 화면 배치, 색상, 아이콘 |
+| `backend` | 기존 팀 서버에 적용할 예약·운전자 API |
 
-Java 21, Android SDK 37이 필요합니다. 로컬 SDK 위치는 Android Studio에서 생성하며
-클라우드의 경로를 Windows의 local.properties에 복사하지 마세요.
+백엔드 적용 방법과 요청 형식은 [API 문서](docs/API.md)를 참고한다. `backend`는 단독 실행 서버가 아니라 기존 서버에 적용하는 연동 코드다.
+
+## 테스트
+
+```sh
+./gradlew assembleDebug testDebugUnitTest lintDebug
+cd backend
+npm test
+```
+
+## 남은 작업
+
+- 팀 서버에 연동 코드와 예약 테이블 적용
+- 실제 API 키, DB, 상하행 코드 설정 후 양쪽 앱 연동 테스트
+- 추천 경로 예약의 노선·정류장 ID 저장 방식 통일
+- GPS에 따른 현재 정류장 자동 이동
+
+현재 집계 대상은 한국 시간 기준 당일 생성 예약이다. 인원은 승객 앱의 예약·탑승·하차 요청 상태를 기준으로 하며 센서 측정값은 아니다. 실제 팀 DB와 공공 API 연결 검증은 아직 진행하지 않았다.
+
+## 연동 대상
+
+- 승객 앱: [hveve6651/bususer](https://github.com/hveve6651/bususer)
+- 백엔드: [kim7899/bus-route-finder](https://github.com/kim7899/bus-route-finder)

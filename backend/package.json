@@ -1,0 +1,1 @@
+{"name":"bus-driver-integration","private":true,"type":"module","scripts":{"test":"node --test test/*.test.js","mock":"node mock-server.js"},"engines":{"node":">=20"}}

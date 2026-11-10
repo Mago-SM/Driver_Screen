@@ -1,3 +1,19 @@
 <resources>
-    <string name="app_name">진주 버스 운전자</string>
+    <string name="ui_1">진주시 시내버스 운행 시스템</string>
+    <string name="ui_2">운행 시스템, 눌러서 설정과 로그인</string>
+    <string name="ui_3">미선택</string>
+    <string name="ui_4">노선, 눌러서 운행 조작</string>
+    <string name="ui_5">로그인 필요</string>
+    <string name="ui_6">연결 상태, 눌러서 자세히 보기</string>
+    <string name="ui_7">정류장 정보, 눌러서 운행 조작</string>
+    <string name="ui_8">현재 정류장</string>
+    <string name="ui_9">운행 준비</string>
+    <string name="ui_10">다음 정류장</string>
+    <string name="ui_11">—</string>
+    <string name="ui_12">실시간 예약 현황</string>
+    <string name="ui_13">승차 예약</string>
+    <string name="ui_14">—</string>
+    <string name="ui_15">하차 예약</string>
+    <string name="ui_16">—</string>
+    <string name="ui_17">정류장 순서</string>
 </resources>

@@ -1,0 +1,12 @@
+{
+  "enabled": false,
+  "simulationId": "REPLACE_WITH_TEAM_SIMULATION_ID",
+  "routeId": "REPLACE_WITH_VERIFIED_BUS_ROUTE_ID",
+  "routeLabel": "검증한 노선 표시명",
+  "directionKey": "REPLACE_WITH_VERIFIED_DIRECTION",
+  "stops": [
+    { "sequence": 0, "name": "검증한 첫 정류장명" },
+    { "sequence": 1, "name": "검증한 다음 정류장명" }
+  ],
+  "mappings": []
+}

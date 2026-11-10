@@ -1,0 +1,1 @@
+{"name":"bus-route-finder","version":"1.0.0","type":"module","private":true,"scripts":{"start":"node server.js","test":"node --test"},"engines":{"node":">=20"},"dependencies":{"dotenv":"^18.0.5","mysql2":"^3.24.5","ws":"^8.22.1"}}
