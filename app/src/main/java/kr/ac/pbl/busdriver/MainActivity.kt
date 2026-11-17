@@ -315,8 +315,11 @@ class MainActivity : Activity() {
         text(R.id.current, s?.stops?.getOrNull(current)?.name ?: "운행 준비")
         text(R.id.next, s?.stops?.getOrNull(current + 1)?.name ?: if (s != null) "종점" else "—")
         val counts = s?.counts()
-        text(R.id.boarding, counts?.boarding?.get(current)?.let { "${it}명" } ?: "—")
-        text(R.id.alighting, counts?.alighting?.get(current)?.let { "${it}명" } ?: "—")
+        val service = gps.serviceSequence ?: current
+        val serviceName = s?.stops?.getOrNull(service)?.name
+        text(R.id.countsStop, serviceName?.let { "$it · 승하차 인원" } ?: "승하차 인원")
+        text(R.id.boarding, counts?.boarding?.getOrNull(service)?.let { "${it}명" } ?: "—")
+        text(R.id.alighting, counts?.alighting?.getOrNull(service)?.let { "${it}명" } ?: "—")
         findViewById<RouteTimeline>(R.id.timeline).apply { stops = s?.stops ?: emptyList(); this.current = this@MainActivity.current; invalidate() }
     }
     private fun createArrivalCard() {
@@ -502,14 +505,14 @@ class MainActivity : Activity() {
         show(AlertDialog.Builder(this).setTitle("${s.routeLabel} · ${s.direction} · $vehicleId · $state")
             .setItems(items.toTypedArray()) { _, which -> when (which) {
                 0 -> show(AlertDialog.Builder(this).setTitle("운행을 시작할까요?").setMessage("첫 정류장부터 수동 진행합니다. 실제 예약 상태는 변경하지 않습니다.")
-                    .setPositiveButton("시작") { _, _ -> current = 0; phase = "RUNNING"; persist(); render() }.setNegativeButton("취소", null).create())
+                    .setPositiveButton("시작") { _, _ -> gps.reset(); current = 0; phase = "RUNNING"; persist(); render() }.setNegativeButton("취소", null).create())
                 1 -> {
                     val now = android.os.SystemClock.elapsedRealtime()
                     if (phase != "RUNNING") Toast.makeText(this, "먼저 운행을 시작하세요.", Toast.LENGTH_SHORT).show()
                     else if (current >= s.stops.lastIndex) Toast.makeText(this, "종점입니다. 운행을 종료하세요.", Toast.LENGTH_SHORT).show()
-                    else if (now - lastAdvance > 800) { current++; lastAdvance = now; persist(); render() }
+                    else if (now - lastAdvance > 800) { gps.reset(); current++; lastAdvance = now; persist(); render() }
                 }
-                2 -> { phase = "ENDED"; persist(); render(); Toast.makeText(this, "로컬 운행 종료", Toast.LENGTH_SHORT).show() }
+                2 -> { gps.reset(); phase = "ENDED"; persist(); render(); Toast.makeText(this, "로컬 운행 종료", Toast.LENGTH_SHORT).show() }
                 3 -> details()
             } }.setNegativeButton("닫기", null).create())
     }
