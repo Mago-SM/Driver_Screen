@@ -56,6 +56,29 @@ class Api(val baseUrl: String) {
         }
         return parse(response)
     }
+
+fun sendLocation(
+    routeId: String,
+    vehicleId: String,
+    latitude: Double,
+    longitude: Double,
+    accuracy: Float
+): JSONObject {
+    val body = JSONObject().apply {
+        put("routeId", routeId)
+        put("vehicleId", vehicleId)
+        put("latitude", latitude)
+        put("longitude", longitude)
+        put("accuracy", accuracy.toDouble())
+    }
+
+    return request(
+        "/api/driver/location",
+        "POST",
+        body
+    )
+}
+
     companion object {
         fun parse(j: JSONObject): Snapshot {
             require(j.getBoolean("complete")) { "일부 예약만 조회되었습니다. 마지막 정상 데이터를 유지합니다." }

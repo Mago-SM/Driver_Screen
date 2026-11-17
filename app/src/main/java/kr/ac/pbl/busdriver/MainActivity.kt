@@ -15,8 +15,138 @@ import java.util.Date
 import java.util.Locale
 import java.security.MessageDigest
 import java.util.concurrent.Executors
+import android.Manifest
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.os.SystemClock
+
 
 class MainActivity : Activity() {
+
+private fun startGps() {
+    val fine = checkSelfPermission(
+        Manifest.permission.ACCESS_FINE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+
+    if (!fine) {
+        requestPermissions(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ),
+            1001
+        )
+        return
+    }
+
+    try {
+        if (!locationManager.isProviderEnabled(
+                LocationManager.GPS_PROVIDER
+            )) {
+            Toast.makeText(
+                this,
+                "기기 GPS를 켜주세요.",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        locationManager.requestLocationUpdates(
+            LocationManager.GPS_PROVIDER,
+            5000L,
+            0f,
+            gpsListener,
+            Looper.getMainLooper()
+        )
+    } catch (e: SecurityException) {
+        Toast.makeText(
+            this,
+            "GPS 권한이 없습니다.",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+}
+
+override fun onRequestPermissionsResult(
+    requestCode: Int,
+    permissions: Array<out String>,
+    grantResults: IntArray
+) {
+    super.onRequestPermissionsResult(
+        requestCode,
+        permissions,
+        grantResults
+    )
+
+    if (requestCode == 1001 &&
+        checkSelfPermission(
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+    ) {
+        startGps()
+    }
+}
+
+private fun sendGpsToServer() {
+    val client = api ?: return
+
+    if (selectedRouteId.isBlank() || vehicleId.isBlank()) {
+        return
+    }
+
+    val location = latestLocation ?: return
+
+    // 오래된 GPS 좌표 전송 방지
+    val age = SystemClock.elapsedRealtimeNanos() -
+        location.elapsedRealtimeNanos
+
+    if (age < 0 || age > 15_000_000_000L) return
+
+    if (!location.hasAccuracy() ||
+        location.accuracy > 100f) return
+
+    val now = SystemClock.elapsedRealtime()
+
+    if (now - lastLocationSentAt < 5000L) return
+    lastLocationSentAt = now
+
+    val route = selectedRouteId
+    val vehicle = vehicleId
+
+    worker.execute {
+        try {
+            client.sendLocation(
+                route,
+                vehicle,
+                location.latitude,
+                location.longitude,
+                location.accuracy
+            )
+
+            android.util.Log.d(
+                "DRIVER_GPS",
+                "GPS 전송 성공: ${location.latitude}, ${location.longitude}"
+            )
+        } catch (e: Exception) {
+            android.util.Log.e(
+                "DRIVER_GPS",
+                "GPS 전송 실패",
+                e
+            )
+        }
+    }
+}
+
+    private val locationManager by lazy {
+        getSystemService(LOCATION_SERVICE) as LocationManager
+    }
+    private var latestLocation: Location? = null
+    private var lastLocationSentAt = 0L
+    private val gpsListener = LocationListener { location ->
+        latestLocation = location
+    }
     private val handler = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private val prefs by lazy { getSharedPreferences("driver", MODE_PRIVATE) }
@@ -37,12 +167,15 @@ class MainActivity : Activity() {
     private var lastAdvance = 0L
     private var dialog: AlertDialog? = null
     private val polling = object : Runnable {
-        override fun run() {
-            if (!foreground) return
-            refresh()
-            handler.postDelayed(this, 5000)
-        }
+    override fun run() {
+        if (!foreground) return
+
+        refresh()          // 기존 예약 인원 갱신
+        sendGpsToServer()  // GPS 서버 전송
+
+        handler.postDelayed(this, 5000)
     }
+}
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN)
@@ -80,13 +213,26 @@ class MainActivity : Activity() {
         resize(root)
     }
     override fun onStart() {
-        super.onStart(); foreground = true
-        handler.removeCallbacks(polling); handler.post(polling)
-    }
+    super.onStart()
+
+    foreground = true
+
+    startGps()
+
+    handler.removeCallbacks(polling)
+    handler.post(polling)
+}
     override fun onStop() {
-        foreground = false; generation++; handler.removeCallbacks(polling)
-        persist(); super.onStop()
-    }
+    foreground = false
+    generation++
+
+    handler.removeCallbacks(polling)
+    locationManager.removeUpdates(gpsListener)
+    latestLocation = null
+
+    persist()
+    super.onStop()
+}
     override fun onDestroy() { dialog?.dismiss(); worker.shutdownNow(); super.onDestroy() }
     private fun show(d: AlertDialog) { dialog?.dismiss(); dialog = d; d.show() }
     private fun text(id: Int, value: String) { findViewById<TextView>(id).text = value }
