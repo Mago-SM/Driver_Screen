@@ -57,33 +57,44 @@ class Api(val baseUrl: String) {
         return parse(response)
     }
 
-fun sendLocation(
-    routeId: String,
-    vehicleId: String,
-    latitude: Double,
-    longitude: Double,
-    accuracy: Float
-): JSONObject {
-    val body = JSONObject().apply {
-        put("routeId", routeId)
-        put("vehicleId", vehicleId)
-        put("latitude", latitude)
-        put("longitude", longitude)
-        put("accuracy", accuracy.toDouble())
+    fun sendLocation(
+        routeId: String,
+        vehicleId: String,
+        latitude: Double,
+        longitude: Double,
+        accuracy: Float
+    ): JSONObject {
+        val body = JSONObject().apply {
+            put("routeId", routeId)
+            put("vehicleId", vehicleId)
+            put("latitude", latitude)
+            put("longitude", longitude)
+            put("accuracy", accuracy.toDouble())
+        }
+
+        return request(
+            "/api/driver/location",
+            "POST",
+            body
+        )
     }
 
-    return request(
-        "/api/driver/location",
-        "POST",
-        body
-    )
-}
-
     companion object {
+        private fun coordinate(j: JSONObject, key: String, limit: Double): Double? =
+            j.optDouble(key, Double.NaN).takeIf { it.isFinite() && it in -limit..limit }
+        private fun parsePosition(j: JSONObject?, count: Int): VehiclePosition? {
+            if (j == null || j.optString("status") != "LIVE") return null
+            val lat = coordinate(j, "latitude", 90.0) ?: return null
+            val lon = coordinate(j, "longitude", 180.0) ?: return null
+            val sequence = j.optInt("passedSequence", -1)
+            val observedAt = j.optLong("observedAt", 0)
+            if (sequence !in 0 until count || observedAt <= 0) return null
+            return VehiclePosition(lat, lon, observedAt, sequence)
+        }
         fun parse(j: JSONObject): Snapshot {
             require(j.getBoolean("complete")) { "일부 예약만 조회되었습니다. 마지막 정상 데이터를 유지합니다." }
             val stops = j.getJSONArray("stops").let { a -> (0 until a.length()).map { i ->
-                a.getJSONObject(i).let { Stop(it.getInt("sequence"), it.getString("name")) }
+                a.getJSONObject(i).let { Stop(it.getInt("sequence"), it.getString("name"), coordinate(it, "latitude", 90.0), coordinate(it, "longitude", 180.0)) }
             } }
             val counts = j.getJSONObject("counts")
             fun values(key: String) = counts.getJSONArray(key).let { a ->
@@ -95,7 +106,7 @@ fun sendLocation(
             }
             val totals = Counts(values("boarding"), values("alighting"), values("plannedAlighting"))
             return Snapshot(j.getString("simulationId"), j.getString("configVersion"), j.getString("routeId"),
-                j.getString("routeLabel"), j.getString("directionKey"), stops, emptyList(), j.getInt("excludedCount"), totals).also {
+                j.getString("routeLabel"), j.getString("directionKey"), stops, emptyList(), j.getInt("excludedCount"), totals, parsePosition(j.optJSONObject("position"), stops.size)).also {
                 require(it.simulationId.isNotBlank() && it.configVersion.isNotBlank() && it.routeId.isNotBlank() && it.direction.isNotBlank())
                 require(it.excludedCount >= 0 && stops.all { s -> s.name.isNotBlank() })
                 it.counts()

@@ -1,3 +1,8 @@
+// Coordinates are WGS84 lttd/lgtd, matching the passenger app BusAPI contract.
+function coordinate(value, limit) {
+  if (value == null || String(value).trim() === '') return null;
+  const n = Number(value); return Number.isFinite(n) && Math.abs(n) <= limit ? n : null;
+}
 // Same public API/identifiers as bususer/BusAPI.kt. Keys remain server-side.
 export function createJinjuProvider({env=process.env,fetcher=fetch,now=Date.now}={}) {
   const cache=new Map();
@@ -29,9 +34,9 @@ export function createJinjuProvider({env=process.env,fetcher=fetch,now=Date.now}
     async stops(id,direction){
       const code=directionCode(direction);const j=await request('getRouteBsta',params(id));
       const all=[...(j.routeBsta?.bsta??[])].sort((a,b)=>Number(a.drct)-Number(b.drct)||Number(a.sqno)-Number(b.sqno));
-      return all.map((s,i)=>({id:String(s.bstaSrvcId??''),name:String(s.bstaNm??''),direction:String(s.drct),sourceOrder:i+1,apiOrder:Number(s.sqno)}))
+      return all.map((s,i)=>({id:String(s.bstaSrvcId??''),name:String(s.bstaNm??''),direction:String(s.drct),sourceOrder:i+1,apiOrder:Number(s.sqno),latitude:coordinate(s.lttd,90),longitude:coordinate(s.lgtd,180)}))
         .filter(s=>s.direction===code).map((s,sequence)=>({...s,sequence}));
     },
-    async vehicles(id){const j=await request('getBusLoc',params(id),5000);return [...new Map((j.busLoc?.bus??[]).filter(b=>b.vhno).map(b=>[String(b.vhno),{vehicleId:String(b.vhno),label:`${b.vhno} · ${b.drctNm??''}`,directionName:String(b.drctNm??''),updatedAt:String(b.altrDtm??'')}])).values()];}
+    async vehicles(id){const j=await request('getBusLoc',params(id),5000);return [...new Map((j.busLoc?.bus??[]).filter(b=>b.vhno).map(b=>[String(b.vhno),{vehicleId:String(b.vhno),label:`${b.vhno} · ${b.drctNm??''}`,directionName:String(b.drctNm??''),updatedAt:String(b.altrDtm??''),latitude:coordinate(b.lttd,90),longitude:coordinate(b.lgtd,180),passedStopId:String(b.pasgBstaSrvcId??''),direction:String(b.drct??'')}])).values()];}
   };
 }

@@ -1,3 +1,4 @@
+import { vehiclePosition } from './vehicle-position.js';
 import {createHash} from 'node:crypto';
 import {send,fail,serviceDate} from './mobile-reservations.js';
 const normalizeNumber=n=>String(n??'').split(':').at(-1).trim().replace(/번$/,'').trim();
@@ -74,7 +75,13 @@ export function createLiveDriverHandler({db,provider,now=Date.now}){
    let rows;
    try{[rows]=await db.execute("SELECT payload FROM mobile_reservations WHERE service_date = ? AND boarding_status IN ('RESERVED','BOARDED')",[date]);}
    catch{return fail(res,500,'모바일 예약 DB 조회 실패. 마이그레이션과 연결 설정을 확인하세요.');}
-   return send(res,200,aggregateMobile(rows,{route,stops,oppositeStops,variantCount:routes.length,direction,vehicleId,date}));
+   // A GPS outage must not discard valid reservation counts.
+   let position = {status:'UNAVAILABLE'};
+   try {
+     const vehicles = await provider.vehicles(route.routeId);
+     position = vehiclePosition(vehicles.find(v=>v.vehicleId===vehicleId), stops, now());
+   } catch { /* expose unavailable position, keep reservation snapshot */ }
+   return send(res,200,{...aggregateMobile(rows,{route,stops,oppositeStops,variantCount:routes.length,direction,vehicleId,date}),position});
   }catch{return fail(res,503,'실제 노선 API 연결·인증키·상하행 코드 설정을 확인하세요.');}
  };
 }

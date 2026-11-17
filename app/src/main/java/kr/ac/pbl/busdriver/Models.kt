@@ -1,12 +1,12 @@
 package kr.ac.pbl.busdriver
 
-data class Stop(val sequence: Int, val name: String)
+data class Stop(val sequence: Int, val name: String, val latitude: Double? = null, val longitude: Double? = null)
 data class Segment(val index: Int, val boarding: Int, val alighting: Int)
 data class Reservation(val id: String, val status: String, val segments: List<Segment>)
 data class Counts(val boarding: List<Int>, val alighting: List<Int>, val plannedAlighting: List<Int> = emptyList())
 data class Snapshot(val simulationId: String, val configVersion: String, val routeId: String,
     val routeLabel: String, val direction: String, val stops: List<Stop>,
-    val reservations: List<Reservation>, val excludedCount: Int, val serverCounts: Counts? = null) {
+    val reservations: List<Reservation>, val excludedCount: Int, val serverCounts: Counts? = null, val position: VehiclePosition? = null) {
     val signature: String get() = listOf(simulationId, configVersion, routeId, direction,
         stops.joinToString { "${it.sequence}:${it.name}" }).joinToString("|")
     fun counts(): Counts {

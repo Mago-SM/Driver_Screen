@@ -25,123 +25,130 @@ import android.os.SystemClock
 
 class MainActivity : Activity() {
 
-private fun startGps() {
-    val fine = checkSelfPermission(
-        Manifest.permission.ACCESS_FINE_LOCATION
-    ) == PackageManager.PERMISSION_GRANTED
+    private fun startGps() {
+        if (!foreground || isDestroyed) return
+        val fine = checkSelfPermission(
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
 
-    if (!fine) {
-        requestPermissions(
-            arrayOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ),
-            1001
-        )
-        return
-    }
-
-    try {
-        if (!locationManager.isProviderEnabled(
-                LocationManager.GPS_PROVIDER
-            )) {
-            Toast.makeText(
-                this,
-                "기기 GPS를 켜주세요.",
-                Toast.LENGTH_LONG
-            ).show()
+        if (!fine) {
+            requestPermissions(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                ),
+                1001
+            )
             return
         }
 
-        locationManager.requestLocationUpdates(
-            LocationManager.GPS_PROVIDER,
-            5000L,
-            0f,
-            gpsListener,
-            Looper.getMainLooper()
-        )
-    } catch (e: SecurityException) {
-        Toast.makeText(
-            this,
-            "GPS 권한이 없습니다.",
-            Toast.LENGTH_SHORT
-        ).show()
-    }
-}
-
-override fun onRequestPermissionsResult(
-    requestCode: Int,
-    permissions: Array<out String>,
-    grantResults: IntArray
-) {
-    super.onRequestPermissionsResult(
-        requestCode,
-        permissions,
-        grantResults
-    )
-
-    if (requestCode == 1001 &&
-        checkSelfPermission(
-            Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-    ) {
-        startGps()
-    }
-}
-
-private fun sendGpsToServer() {
-    val client = api ?: return
-
-    if (selectedRouteId.isBlank() || vehicleId.isBlank()) {
-        return
-    }
-
-    val location = latestLocation ?: return
-
-    // 오래된 GPS 좌표 전송 방지
-    val age = SystemClock.elapsedRealtimeNanos() -
-        location.elapsedRealtimeNanos
-
-    if (age < 0 || age > 15_000_000_000L) return
-
-    if (!location.hasAccuracy() ||
-        location.accuracy > 100f) return
-
-    val now = SystemClock.elapsedRealtime()
-
-    if (now - lastLocationSentAt < 5000L) return
-    lastLocationSentAt = now
-
-    val route = selectedRouteId
-    val vehicle = vehicleId
-
-    worker.execute {
         try {
-            client.sendLocation(
-                route,
-                vehicle,
-                location.latitude,
-                location.longitude,
-                location.accuracy
-            )
+            if (!locationManager.isProviderEnabled(
+                    LocationManager.GPS_PROVIDER
+                )) {
+                Toast.makeText(
+                    this,
+                    "기기 GPS를 켜주세요.",
+                    Toast.LENGTH_LONG
+                ).show()
+                return
+            }
 
-            android.util.Log.d(
-                "DRIVER_GPS",
-                "GPS 전송 성공: ${location.latitude}, ${location.longitude}"
+            locationManager.requestLocationUpdates(
+                LocationManager.GPS_PROVIDER,
+                5000L,
+                0f,
+                gpsListener,
+                Looper.getMainLooper()
             )
-        } catch (e: Exception) {
-            android.util.Log.e(
-                "DRIVER_GPS",
-                "GPS 전송 실패",
-                e
-            )
+        } catch (e: SecurityException) {
+            Toast.makeText(
+                this,
+                "GPS 권한이 없습니다.",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
-}
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(
+            requestCode,
+            permissions,
+            grantResults
+        )
+
+        if (requestCode == 1001 &&
+            checkSelfPermission(
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            startGps()
+        }
+    }
+
+    private fun sendGpsToServer() {
+        if (!foreground || locationSending) return
+        val client = api ?: return
+
+        if (selectedRouteId.isBlank() || vehicleId.isBlank()) {
+            return
+        }
+
+        val location = latestLocation?.let { Location(it) } ?: return
+
+        // 오래된 GPS 좌표 전송 방지
+        val age = SystemClock.elapsedRealtimeNanos() -
+            location.elapsedRealtimeNanos
+
+        if (age < 0 || age > 15_000_000_000L) return
+
+        if (!location.hasAccuracy() ||
+            !location.accuracy.isFinite() || location.accuracy !in 0f..100f) return
+
+        val now = SystemClock.elapsedRealtime()
+
+        if (now - lastLocationSentAt < 5000L) return
+        lastLocationSentAt = now
+
+        val route = selectedRouteId
+        val vehicle = vehicleId
+
+        locationSending = true
+        locationWorker.execute {
+            try {
+                client.sendLocation(
+                    route,
+                    vehicle,
+                    location.latitude,
+                    location.longitude,
+                    location.accuracy
+                )
+
+                android.util.Log.d(
+                    "DRIVER_GPS",
+                    "GPS 전송 성공"
+                )
+            } catch (e: Exception) {
+                android.util.Log.e(
+                    "DRIVER_GPS",
+                    "GPS 전송 실패",
+                    e
+                )
+            } finally {
+                handler.post { locationSending = false }
+            }
+        }
+    }
 
     private val locationManager by lazy {
         getSystemService(LOCATION_SERVICE) as LocationManager
     }
+    private val locationWorker = Executors.newSingleThreadExecutor()
+    private var locationSending = false
     private var latestLocation: Location? = null
     private var lastLocationSentAt = 0L
     private val gpsListener = LocationListener { location ->
@@ -156,6 +163,16 @@ private fun sendGpsToServer() {
     private var selectedRouteId = ""
     private var vehicleId = ""
     private var snapshot: Snapshot? = null
+    private val gps = GpsProgress()
+    private var arrivalCard: LinearLayout? = null
+    private var arrivalOverlay: FrameLayout? = null
+    private var arrivalName: TextView? = null
+    private var arrivalDistance: TextView? = null
+    private var arrivalBoarding: TextView? = null
+    private var arrivalAlighting: TextView? = null
+    private var arrivalPulse: android.animation.ObjectAnimator? = null
+    private var lastPulsedArrival: String? = null
+    private val expireGps = Runnable { gps.unavailable(); render() }
     private var current = 0
     private var phase = "READY"
     private var lastSuccess = "아직 없음"
@@ -167,15 +184,13 @@ private fun sendGpsToServer() {
     private var lastAdvance = 0L
     private var dialog: AlertDialog? = null
     private val polling = object : Runnable {
-    override fun run() {
-        if (!foreground) return
-
-        refresh()          // 기존 예약 인원 갱신
-        sendGpsToServer()  // GPS 서버 전송
-
-        handler.postDelayed(this, 5000)
+        override fun run() {
+            if (!foreground) return
+            refresh()
+            sendGpsToServer()
+            handler.postDelayed(this, 5000)
+        }
     }
-}
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN)
@@ -186,6 +201,7 @@ private fun sendGpsToServer() {
         findViewById<View>(R.id.route).setOnClickListener { controls() }
         findViewById<View>(R.id.stationCard).setOnClickListener { controls() }
         findViewById<View>(R.id.status).setOnClickListener { details() }
+        createArrivalCard()
         render()
         handler.post { if (!isFinishing) settings() }
     }
@@ -213,27 +229,21 @@ private fun sendGpsToServer() {
         resize(root)
     }
     override fun onStart() {
-    super.onStart()
-
-    foreground = true
-
-    startGps()
-
-    handler.removeCallbacks(polling)
-    handler.post(polling)
-}
+        super.onStart(); foreground = true
+        startGps()
+        handler.removeCallbacks(polling); handler.post(polling)
+    }
     override fun onStop() {
-    foreground = false
-    generation++
-
-    handler.removeCallbacks(polling)
-    locationManager.removeUpdates(gpsListener)
-    latestLocation = null
-
-    persist()
-    super.onStop()
-}
-    override fun onDestroy() { dialog?.dismiss(); worker.shutdownNow(); super.onDestroy() }
+        foreground = false; generation++; handler.removeCallbacks(polling)
+        locationManager.removeUpdates(gpsListener)
+        latestLocation = null
+        handler.removeCallbacks(expireGps); gps.unavailable(); hideArrival()
+        persist(); super.onStop()
+    }
+    override fun onDestroy() {
+        arrivalPulse?.cancel(); dialog?.dismiss()
+        locationWorker.shutdownNow(); worker.shutdownNow(); super.onDestroy()
+    }
     private fun show(d: AlertDialog) { dialog?.dismiss(); dialog = d; d.show() }
     private fun text(id: Int, value: String) { findViewById<TextView>(id).text = value }
     private fun clock() = SimpleDateFormat("HH:mm:ss", Locale.KOREA).format(Date())
@@ -248,7 +258,7 @@ private fun sendGpsToServer() {
     private fun accept(s: Snapshot) {
         s.counts() // 검증이 끝난 전체 스냅샷만 교체합니다.
         if (snapshot?.signature != s.signature) {
-            current = 0; phase = "READY"
+            gps.reset(); current = 0; phase = "READY"
             if (restorePending && prefs.getString("stateKey", "") == stateKey(s)) {
                 current = prefs.getInt("current", 0).coerceIn(s.stops.indices)
                 phase = prefs.getString("phase", "READY").takeIf { it in listOf("READY", "RUNNING", "ENDED") } ?: "READY"
@@ -256,7 +266,12 @@ private fun sendGpsToServer() {
             restorePending = false
         }
         snapshot = s; lastSuccess = clock()
+        gps.update(s.stops, s.position, System.currentTimeMillis())
+        if (gps.live) { current = gps.current; phase = "RUNNING" }
+        handler.removeCallbacks(expireGps)
+        s.position?.let { handler.postDelayed(expireGps, (it.observedAt + 30001 - System.currentTimeMillis()).coerceIn(1L, 35001L)) }
         message = if (s.excludedCount > 0) "주의 · ${s.excludedCount}개 구간 제외" else "갱신 $lastSuccess"
+        if (!gps.live) message += " · GPS 대기"
         persist(); render()
     }
     private fun <T> background(job: () -> T, success: (T) -> Unit) {
@@ -268,6 +283,7 @@ private fun sendGpsToServer() {
                 busy = false
                 if (ticket == generation && foreground && !isDestroyed) {
                     result.fold(success) { e ->
+                        gps.unavailable(); handler.removeCallbacks(expireGps)
                         message = when {
                             e is ApiError && e.status == 401 -> "서버가 로그인을 요구합니다. 노선 조회 API 적용을 확인하세요."
                             e is ApiError && e.status == 403 -> "접근 불가: ${e.message}"
@@ -292,6 +308,7 @@ private fun sendGpsToServer() {
     }
 
     private fun render() {
+        renderArrival()
         val s = snapshot
         text(R.id.route, s?.let { "${it.routeLabel} · ${it.direction}" } ?: "미선택")
         text(R.id.status, message.lineSequence().first())
@@ -302,8 +319,103 @@ private fun sendGpsToServer() {
         text(R.id.alighting, counts?.alighting?.get(current)?.let { "${it}명" } ?: "—")
         findViewById<RouteTimeline>(R.id.timeline).apply { stops = s?.stops ?: emptyList(); this.current = this@MainActivity.current; invalidate() }
     }
+    private fun createArrivalCard() {
+        val density = resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).toInt()
+        fun color(value: String) = android.graphics.Color.parseColor(value)
+        fun surface(fill: String, radius: Int) = android.graphics.drawable.GradientDrawable().apply {
+            setColor(color(fill)); cornerRadius = dp(radius).toFloat()
+        }
+        fun label(size: Float, ink: String, bold: Boolean = false) = TextView(this).apply {
+            textSize = size; setTextColor(color(ink)); includeFontPadding = false
+            if (bold) setTypeface(null, android.graphics.Typeface.BOLD)
+        }
+        val overlay = FrameLayout(this).apply {
+            setBackgroundColor(color("#800B1220"))
+            visibility = View.GONE
+            isClickable = true
+            elevation = dp(20).toFloat()
+        }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(32), dp(28), dp(32), dp(28))
+            background = surface("#FFFFFF", 24)
+            elevation = dp(12).toFloat()
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
+        val header = LinearLayout(this).apply { gravity = android.view.Gravity.CENTER_VERTICAL }
+        header.addView(label(18f, "#2563EB", true).apply { text = "●  곧 도착" },
+            LinearLayout.LayoutParams(0, -2, 1f))
+        arrivalDistance = label(16f, "#475569", true).apply {
+            setPadding(dp(12), dp(8), dp(12), dp(8)); background = surface("#F1F5F9", 10)
+        }
+        header.addView(arrivalDistance)
+        card.addView(header)
+        arrivalName = label(40f, "#0F172A", true).apply {
+            maxLines = 2
+            setAutoSizeTextTypeUniformWithConfiguration(26, 40, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
+        }
+        card.addView(arrivalName, LinearLayout.LayoutParams(-1, dp(100)).apply {
+            topMargin = dp(12); bottomMargin = dp(20)
+        })
+        arrivalName?.gravity = android.view.Gravity.CENTER_VERTICAL
+        val countsRow = LinearLayout(this)
+        fun countTile(title: String, backgroundColor: String, ink: String): Pair<LinearLayout, TextView> {
+            val tile = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(20), dp(16), dp(20), dp(16))
+                background = surface(backgroundColor, 16)
+            }
+            tile.addView(label(17f, ink, true).apply { text = title })
+            val value = label(34f, ink, true)
+            tile.addView(value, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+            return tile to value
+        }
+        val (boardingTile, boardingValue) = countTile("↑  승차", "#EFF6FF", "#1D4ED8")
+        val (alightingTile, alightingValue) = countTile("↓  하차", "#FFF1F2", "#E11D48")
+        arrivalBoarding = boardingValue; arrivalAlighting = alightingValue
+        countsRow.addView(boardingTile, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
+        countsRow.addView(alightingTile, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(8) })
+        card.addView(countsRow)
+        overlay.addView(card, FrameLayout.LayoutParams(
+            minOf(dp(640), (resources.displayMetrics.widthPixels * 0.76f).toInt()),
+            -2, android.view.Gravity.CENTER))
+        findViewById<FrameLayout>(android.R.id.content).addView(overlay, FrameLayout.LayoutParams(-1, -1))
+        arrivalOverlay = overlay; arrivalCard = card
+    }
+    private fun hideArrival() {
+        arrivalPulse?.cancel(); arrivalPulse = null
+        arrivalCard?.alpha = 1f
+        arrivalOverlay?.visibility = View.GONE
+    }
+    private fun renderArrival() {
+        val s = snapshot
+        val target = gps.alertSequence
+        if (!foreground || !gps.live || s == null || target == null || target !in s.stops.indices) {
+            hideArrival(); return
+        }
+        val counts = s.counts()
+        arrivalName?.text = s.stops[target].name
+        arrivalDistance?.text = "약 ${kotlin.math.round(gps.distanceMeters ?: 20.0).toInt()}m"
+        arrivalBoarding?.text = "${counts.boarding[target]}명"
+        arrivalAlighting?.text = "${counts.alighting[target]}명"
+        arrivalOverlay?.visibility = View.VISIBLE
+        val key = "${s.signature}|$vehicleId|$target"
+        if (lastPulsedArrival != key) {
+            lastPulsedArrival = key
+            arrivalPulse?.cancel()
+            // Three gentle pulses on first arrival only, never on each 5-second refresh.
+            arrivalPulse = android.animation.ObjectAnimator.ofFloat(arrivalCard, View.ALPHA, 1f, 0.58f, 1f).apply {
+                duration = 1600
+                repeatCount = 2
+                interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+                start()
+            }
+        }
+    }
     private fun reset() {
         persist(); generation++; api = null; selectedRouteId = ""; vehicleId = ""; snapshot = null
+        gps.reset(); lastPulsedArrival = null; handler.removeCallbacks(expireGps)
         current = 0; phase = "READY"; restorePending = true; lastSuccess = "아직 없음"
         message = "노선 선택 필요"; render()
     }
@@ -384,6 +496,7 @@ private fun sendGpsToServer() {
     }
     private fun controls() {
         val s = snapshot ?: run { settings(); return }
+        if (gps.live) { details(); return }
         val state = when (phase) { "RUNNING" -> "운행중"; "ENDED" -> "종료"; else -> "미시작" }
         val items = mutableListOf("운행 시작 / 처음부터", "다음 정류장으로 진행", "운행 종료", "정류장별 예약 보기")
         show(AlertDialog.Builder(this).setTitle("${s.routeLabel} · ${s.direction} · $vehicleId · $state")

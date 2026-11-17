@@ -20,7 +20,7 @@ elif text in originals: base = text
 else: sys.exit('검토한 원본/이전 생성본과 다릅니다. backend/server.js와 수동 비교하세요. 변경하지 않았습니다.')
 backup = root / 'server.js.before-mobile-driver'
 if backup.exists(): sys.exit('백업이 이미 존재합니다. 수동 확인하세요.')
-names = ['mobile-reservations.js','live-driver-service.js','jinju-provider.js','migrations/001-mobile-reservations.sql']
+names = ['mobile-reservations.js','live-driver-service.js','jinju-provider.js','vehicle-position.js','migrations/001-mobile-reservations.sql']
 for name in names:
     target = root/name
     if target.exists() and target.read_bytes() != (source/name).read_bytes(): sys.exit(f'{name}에 기존 변경이 있습니다. 덮어쓰지 않습니다.')
