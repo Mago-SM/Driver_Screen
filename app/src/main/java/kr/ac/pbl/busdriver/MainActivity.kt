@@ -315,11 +315,12 @@ class MainActivity : Activity() {
         text(R.id.current, s?.stops?.getOrNull(current)?.name ?: "운행 준비")
         text(R.id.next, s?.stops?.getOrNull(current + 1)?.name ?: if (s != null) "종점" else "—")
         val counts = s?.counts()
+        val alighting = counts?.let { it.plannedAlighting.ifEmpty { it.alighting } }
         val service = gps.serviceSequence ?: current
         val serviceName = s?.stops?.getOrNull(service)?.name
         text(R.id.countsStop, serviceName?.let { "$it · 승하차 인원" } ?: "승하차 인원")
         text(R.id.boarding, counts?.boarding?.getOrNull(service)?.let { "${it}명" } ?: "—")
-        text(R.id.alighting, counts?.alighting?.getOrNull(service)?.let { "${it}명" } ?: "—")
+        text(R.id.alighting, alighting?.getOrNull(service)?.let { "${it}명" } ?: "—")
         findViewById<RouteTimeline>(R.id.timeline).apply { stops = s?.stops ?: emptyList(); this.current = this@MainActivity.current; invalidate() }
     }
     private fun createArrivalCard() {
@@ -398,10 +399,11 @@ class MainActivity : Activity() {
             hideArrival(); return
         }
         val counts = s.counts()
+        val alighting = counts.plannedAlighting.ifEmpty { counts.alighting }
         arrivalName?.text = s.stops[target].name
         arrivalDistance?.text = "약 ${kotlin.math.round(gps.distanceMeters ?: 20.0).toInt()}m"
         arrivalBoarding?.text = "${counts.boarding[target]}명"
-        arrivalAlighting?.text = "${counts.alighting[target]}명"
+        arrivalAlighting?.text = "${alighting[target]}명"
         arrivalOverlay?.visibility = View.VISIBLE
         val key = "${s.signature}|$vehicleId|$target"
         if (lastPulsedArrival != key) {
